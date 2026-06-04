@@ -475,7 +475,7 @@ function placeTextInput(imgX, imgY, clientX, clientY) {
 
   // Position: fixed relative to viewport
   textWrap.style.left    = `${clientX}px`;
-  textWrap.style.top     = `${clientY - fontSize * 0.85}px`;
+  textWrap.style.top     = `${clientY - cssPx * 0.85}px`;
   textWrap.style.display = 'block';
   // Defer focus — mousedown steals it back if we call synchronously
   setTimeout(() => textInput.focus(), 0);
