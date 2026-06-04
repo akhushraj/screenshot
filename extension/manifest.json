@@ -10,7 +10,10 @@
     "identity",
     "storage",
     "unlimitedStorage",
-    "clipboardWrite"
+    "clipboardWrite",
+    "desktopCapture",
+    "contextMenus",
+    "offscreen"
   ],
 
   "host_permissions": [
