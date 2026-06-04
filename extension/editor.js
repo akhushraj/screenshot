@@ -142,35 +142,83 @@ function setupEvents() {
     });
   });
 
-  // Close popover when clicking anywhere else
-  document.addEventListener('click', () => colorPopover.classList.remove('visible'));
+  // Close popovers when clicking anywhere else
+  document.addEventListener('click', () => {
+    colorPopover.classList.remove('visible');
+    strokePopover.classList.remove('visible');
+    fsizePopover.classList.remove('visible');
+  });
 
   // Initialise swatch to match default color
   setColor(S.color);
 
-  // ── Stroke buttons ──
-  // Reflect saved stroke on page load
-  document.querySelectorAll('.stroke-btn').forEach(btn => {
-    const w = parseInt(btn.dataset.width, 10);
-    btn.classList.toggle('active', w === S.strokeWidth);
-    btn.addEventListener('click', () => {
-      S.strokeWidth = w;
-      localStorage.setItem('ss-stroke', w);
-      document.querySelectorAll('.stroke-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+  // ── Stroke popover ──
+  const strokeBtn     = document.getElementById('stroke-btn');
+  const strokePopover = document.getElementById('stroke-popover');
+  const strokeIndicator = document.getElementById('stroke-indicator');
+
+  const STROKE_HEIGHTS = { 3: '2px', 6: '4px', 12: '7px' };
+
+  function updateStrokeIndicator() {
+    strokeIndicator.style.height = STROKE_HEIGHTS[S.strokeWidth] || '4px';
+    document.querySelectorAll('#stroke-popover .pop-opt').forEach(b =>
+      b.classList.toggle('active', parseInt(b.dataset.width, 10) === S.strokeWidth)
+    );
+  }
+
+  strokeBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    fsizePopover.classList.remove('visible');
+    const rect = strokeBtn.getBoundingClientRect();
+    strokePopover.style.top = `${rect.top}px`;
+    strokePopover.classList.toggle('visible');
+  });
+
+  document.querySelectorAll('#stroke-popover .pop-opt').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      S.strokeWidth = parseInt(btn.dataset.width, 10);
+      localStorage.setItem('ss-stroke', S.strokeWidth);
+      updateStrokeIndicator();
+      strokePopover.classList.remove('visible');
     });
   });
 
-  // ── Font size buttons ──
-  document.querySelectorAll('.fsize-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.fsize === S.textSize);
-    btn.addEventListener('click', () => {
+  updateStrokeIndicator();
+
+  // ── Font size popover ──
+  const fsizeBtn      = document.getElementById('fsize-btn');
+  const fsizePopover  = document.getElementById('fsize-popover');
+  const fsizeIndicator = document.getElementById('fsize-indicator');
+
+  const FSIZE_INDICATOR_PX = { small: '10px', medium: '14px', large: '19px' };
+
+  function updateFsizeIndicator() {
+    fsizeIndicator.style.fontSize = FSIZE_INDICATOR_PX[S.textSize] || '14px';
+    document.querySelectorAll('#fsize-popover .pop-opt').forEach(b =>
+      b.classList.toggle('active', b.dataset.fsize === S.textSize)
+    );
+  }
+
+  fsizeBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    strokePopover.classList.remove('visible');
+    const rect = fsizeBtn.getBoundingClientRect();
+    fsizePopover.style.top = `${rect.top}px`;
+    fsizePopover.classList.toggle('visible');
+  });
+
+  document.querySelectorAll('#fsize-popover .pop-opt').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
       S.textSize = btn.dataset.fsize;
       localStorage.setItem('ss-text-size', S.textSize);
-      document.querySelectorAll('.fsize-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      updateFsizeIndicator();
+      fsizePopover.classList.remove('visible');
     });
   });
+
+  updateFsizeIndicator();
 
   // Undo
   document.getElementById('undo-btn').addEventListener('click', undo);

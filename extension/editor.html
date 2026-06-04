@@ -121,49 +121,45 @@
     .cpop-dot:hover { transform: scale(1.12); }
     .cpop-dot.active { border-color: #fff; }
 
-    /* Font size buttons */
-    .fsize-btn {
-      width: 38px;
-      height: 26px;
-      border-radius: 5px;
+    /* Stroke + font-size sub-menu popovers */
+    #stroke-popover, #fsize-popover {
+      display: none;
+      position: fixed;
+      left: 54px;
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 10px;
+      padding: 6px;
+      z-index: 500;
+      flex-direction: column;
+      gap: 3px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    #stroke-popover.visible, #fsize-popover.visible { display: flex; }
+
+    .pop-opt {
+      width: 52px;
+      height: 32px;
       border: none;
+      border-radius: 6px;
       background: transparent;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.12s;
+      padding: 0 8px;
       color: #9ca3af;
       font-family: Arial, sans-serif;
       font-weight: 700;
-      flex-shrink: 0;
+      transition: background 0.1s, color 0.1s;
     }
-    .fsize-btn:hover { background: #374151; color: #f9fafb; }
-    .fsize-btn.active { background: #1d4ed8; color: #fff; }
-
-    /* Stroke size buttons */
-    .stroke-btn {
-      width: 38px;
-      height: 26px;
-      border-radius: 5px;
-      border: none;
-      background: transparent;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 6px;
-      transition: background 0.12s;
-      flex-shrink: 0;
-    }
-    .stroke-btn:hover { background: #374151; }
-    .stroke-btn.active { background: #1d4ed8; }
-    .stroke-line {
-      background: #9ca3af;
-      border-radius: 2px;
+    .pop-opt:hover { background: #374151; color: #f9fafb; }
+    .pop-opt.active { background: #1d4ed8; color: #fff; }
+    .pop-opt .pop-line {
       width: 100%;
+      border-radius: 2px;
+      background: currentColor;
     }
-    .stroke-btn.active .stroke-line { background: #fff; }
 
     /* Share + Clipboard buttons */
     #share-btn, #clip-btn {
@@ -445,22 +441,15 @@
 
     <div class="tb-divider"></div>
 
-    <button class="stroke-btn" data-width="3" title="Thin">
-      <div class="stroke-line" style="height:2px"></div>
-    </button>
-    <button class="stroke-btn" data-width="6" title="Medium">
-      <div class="stroke-line" style="height:4px"></div>
-    </button>
-    <button class="stroke-btn active" data-width="12" title="Thick">
-      <div class="stroke-line" style="height:7px"></div>
+    <!-- Stroke thickness -->
+    <button id="stroke-btn" class="tool-btn" title="Stroke thickness">
+      <div id="stroke-indicator" style="width:22px;height:3px;background:currentColor;border-radius:2px"></div>
     </button>
 
-    <div class="tb-divider"></div>
-
-    <!-- Font size (text tool) -->
-    <button class="fsize-btn active" data-fsize="small" title="Small text">A</button>
-    <button class="fsize-btn" data-fsize="medium" title="Medium text" style="font-size:14px">A</button>
-    <button class="fsize-btn" data-fsize="large" title="Large text" style="font-size:18px">A</button>
+    <!-- Font size -->
+    <button id="fsize-btn" class="tool-btn" title="Text size">
+      <span id="fsize-indicator" style="font-size:11px;font-weight:700;font-family:Arial,sans-serif">A</span>
+    </button>
 
     <div class="tb-divider"></div>
 
@@ -476,6 +465,26 @@
         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
       </svg>
     </button>
+
+    <!-- Stroke popover -->
+    <div id="stroke-popover">
+      <button class="pop-opt" data-width="3" title="Thin">
+        <div class="pop-line" style="height:2px"></div>
+      </button>
+      <button class="pop-opt" data-width="6" title="Medium">
+        <div class="pop-line" style="height:4px"></div>
+      </button>
+      <button class="pop-opt" data-width="12" title="Thick">
+        <div class="pop-line" style="height:7px"></div>
+      </button>
+    </div>
+
+    <!-- Font size popover -->
+    <div id="fsize-popover">
+      <button class="pop-opt" data-fsize="small"  style="font-size:11px">A</button>
+      <button class="pop-opt" data-fsize="medium" style="font-size:15px">A</button>
+      <button class="pop-opt" data-fsize="large"  style="font-size:19px">A</button>
+    </div>
 
   </div>
 
