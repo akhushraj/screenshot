@@ -121,6 +121,26 @@
     .cpop-dot:hover { transform: scale(1.12); }
     .cpop-dot.active { border-color: #fff; }
 
+    /* Font size buttons */
+    .fsize-btn {
+      width: 38px;
+      height: 26px;
+      border-radius: 5px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.12s;
+      color: #9ca3af;
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .fsize-btn:hover { background: #374151; color: #f9fafb; }
+    .fsize-btn.active { background: #1d4ed8; color: #fff; }
+
     /* Stroke size buttons */
     .stroke-btn {
       width: 38px;
@@ -434,6 +454,13 @@
     <button class="stroke-btn active" data-width="12" title="Thick">
       <div class="stroke-line" style="height:7px"></div>
     </button>
+
+    <div class="tb-divider"></div>
+
+    <!-- Font size (text tool) -->
+    <button class="fsize-btn active" data-fsize="small" title="Small text">A</button>
+    <button class="fsize-btn" data-fsize="medium" title="Medium text" style="font-size:14px">A</button>
+    <button class="fsize-btn" data-fsize="large" title="Large text" style="font-size:18px">A</button>
 
     <div class="tb-divider"></div>
 

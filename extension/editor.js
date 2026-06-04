@@ -7,6 +7,7 @@ const S = {
   tool: 'crop',           // 'crop' | 'select' | 'arrow' | 'rect' | 'circle' | 'text'
   color: '#FF3B30',
   strokeWidth: parseInt(localStorage.getItem('ss-stroke') || '12', 10),
+  textSize: localStorage.getItem('ss-text-size') || 'small', // 'small' | 'medium' | 'large'
 
   image: null,            // HTMLImageElement
 
@@ -160,6 +161,17 @@ function setupEvents() {
     });
   });
 
+  // ── Font size buttons ──
+  document.querySelectorAll('.fsize-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.fsize === S.textSize);
+    btn.addEventListener('click', () => {
+      S.textSize = btn.dataset.fsize;
+      localStorage.setItem('ss-text-size', S.textSize);
+      document.querySelectorAll('.fsize-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
   // Undo
   document.getElementById('undo-btn').addEventListener('click', undo);
 
@@ -257,6 +269,21 @@ function onMouseDown(e) {
     }
     render();
     return;
+  }
+
+  // ── Any tool (except crop): click on existing annotation to drag it ──
+  if (S.tool !== 'crop') {
+    for (let i = S.annotations.length - 1; i >= 0; i--) {
+      if (hitTest(S.annotations[i], x, y)) {
+        S.selectedIdx = i;
+        S.isDraggingAnnotation = true;
+        S.dragLastX = x;
+        S.dragLastY = y;
+        canvas.style.cursor = 'grabbing';
+        render();
+        return;
+      }
+    }
   }
 
   // ── Drawing tools ──
@@ -440,12 +467,10 @@ function undo() {
 function placeTextInput(imgX, imgY, clientX, clientY) {
   S.textPending = { x: imgX, y: imgY };
 
-  const r       = canvas.getBoundingClientRect();
-  const cssScale = r.width / canvas.width;
-  const fontSize = Math.max(12, 20 * cssScale);
+  const cssPx = TEXT_SIZE_PX[S.textSize] ?? 20;
 
   textInput.style.color    = S.color;
-  textInput.style.fontSize = `${fontSize}px`;
+  textInput.style.fontSize = `${cssPx}px`;
   textInput.value          = '';
 
   // Position: fixed relative to viewport
@@ -456,15 +481,18 @@ function placeTextInput(imgX, imgY, clientX, clientY) {
   setTimeout(() => textInput.focus(), 0);
 }
 
+// CSS pixel sizes for each named text size
+const TEXT_SIZE_PX = { small: 12, medium: 20, large: 32 };
+
 function commitText() {
   if (!S.textPending) return;
   const val = textInput.value.trim();
   if (val) {
-    // Scale font size so it renders as ~22 CSS pixels on screen,
-    // regardless of the underlying image resolution (handles retina captures).
-    const r          = canvas.getBoundingClientRect();
-    const imgPerCss  = canvas.width / r.width;   // e.g. 2 on a 2× retina capture
-    const fontSize   = Math.round(22 * imgPerCss);
+    // Scale chosen CSS size to image-space pixels (handles retina captures).
+    const r         = canvas.getBoundingClientRect();
+    const imgPerCss = canvas.width / r.width;
+    const cssPx     = TEXT_SIZE_PX[S.textSize] ?? 20;
+    const fontSize  = Math.round(cssPx * imgPerCss);
     S.annotations.push({
       type: 'text',
       x: S.textPending.x,
@@ -716,7 +744,7 @@ function drawSelectionHandles(c, ann) {
 // ─────────────────────────────────────────────
 const HINTS = {
   crop:   'Drag to select a region to save. Leave empty to save the full page. Press ⌘↵ to share.',
-  select: 'Click an annotation to select it. Drag to move it. Press Delete to remove it.',
+  select: 'Click an annotation to select it. Drag to move it. Press Delete to remove it. You can also drag any annotation directly from other tools.',
   arrow:  'Drag to draw an arrow. Press ⌘↵ to share when done.',
   rect:   'Drag to draw a rectangle. Press ⌘↵ to share when done.',
   circle: 'Drag to draw a circle or oval. Press ⌘↵ to share when done.',
