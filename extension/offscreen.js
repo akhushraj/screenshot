@@ -42,7 +42,7 @@ async function captureFrame(streamId) {
 
     chrome.runtime.sendMessage({ type: 'capture-complete', base64 });
   } catch (err) {
-    console.error('[Screenshot] offscreen capture failed:', err);
+    console.error('[Captura] offscreen capture failed:', err);
   } finally {
     stream?.getTracks().forEach(t => t.stop());
   }

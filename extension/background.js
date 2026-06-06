@@ -42,7 +42,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
     await openEditor(dataUrl.slice('data:image/png;base64,'.length), tab);
   } catch (err) {
-    console.error('[Screenshot] captureVisibleTab failed:', err);
+    console.error('[Captura] captureVisibleTab failed:', err);
 
     if (tab.url.startsWith('file://')) {
       // Open a helper page explaining how to allow file access
@@ -81,7 +81,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
       await openEditor(base64, tab);
     } catch (err) {
-      console.error('[Screenshot] Full-window capture failed:', err);
+      console.error('[Captura] Full-window capture failed:', err);
     }
   });
 });

@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "icon-picker",
+      "name": "store-assets",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "7823"],
-      "port": 7823
+      "runtimeArgs": ["-m", "http.server", "7788", "--directory", "/Users/akhushraj/Development/experiments/snapshare/store-assets"],
+      "port": 7788
     }
   ]
 }

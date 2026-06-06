@@ -960,7 +960,7 @@ function getAuthToken() {
       if (chrome.runtime.lastError) {
         const msg = chrome.runtime.lastError.message || '';
         if (msg.includes('client_id')) {
-          reject(new Error('OAuth not configured — open Screenshot Options to connect your Google Drive.'));
+          reject(new Error('OAuth not configured — open Captura Options to connect your Google Drive.'));
         } else {
           reject(new Error(`Auth failed: ${msg}`));
         }
@@ -988,7 +988,7 @@ async function getOrCreateFolder(token) {
   }
 
   // 2. Search Drive for an existing "Screenshot" folder before creating a new one
-  const q   = encodeURIComponent("name='Screenshot' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+  const q   = encodeURIComponent("name='Captura' and mimeType='application/vnd.google-apps.folder' and trashed=false");
   const sr  = await driveGet(token, `files?q=${q}&fields=files(id)`);
   if (sr.ok) {
     const { files } = await sr.json();
@@ -1000,7 +1000,7 @@ async function getOrCreateFolder(token) {
 
   // 3. Nothing found — create it
   const r = await drivePost(token, 'files', {
-    name: 'Screenshot',
+    name: 'Captura',
     mimeType: 'application/vnd.google-apps.folder',
   });
   if (!r.ok) throw new Error(`Could not create Drive folder (${r.status})`);
@@ -1015,7 +1015,7 @@ async function uploadFile(token, blob, folderId) {
   const now  = new Date();
   const date = now.toISOString().slice(0, 10);
   const time = now.toTimeString().slice(0, 8).replace(/:/g, '.');
-  const name = `Screenshot ${date} at ${time}.png`;
+  const name = `Captura ${date} at ${time}.png`;
   const meta = JSON.stringify({ name, parents: [folderId] });
 
   const form = new FormData();
@@ -1088,5 +1088,5 @@ function showError(msg) {
   errorBar.innerHTML = `⚠️ ${msg} <span id="err-close" style="float:right;cursor:pointer;margin-left:12px;font-weight:bold;">✕</span>`;
   errorBar.style.display = 'block';
   document.getElementById('err-close').onclick = () => { errorBar.style.display = 'none'; };
-  console.error('[Screenshot]', msg);
+  console.error('[Captura]', msg);
 }

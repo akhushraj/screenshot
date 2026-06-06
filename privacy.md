@@ -1,10 +1,10 @@
-# Privacy Policy — Screenshot Extension
+# Privacy Policy — Captura Extension
 
-**Last updated: May 2026**
+**Last updated: June 2026**
 
 ## Summary
 
-Screenshot is a Chrome extension that captures webpage screenshots, lets you annotate them, and copies them to your clipboard or uploads them to your own Google Drive. **No data is collected by the developer. No external servers are involved.**
+Captura is a Chrome extension that captures webpage screenshots, lets you annotate them, and copies them to your clipboard or uploads them to your own Google Drive. **No data is collected by the developer. No external servers are involved.**
 
 ---
 

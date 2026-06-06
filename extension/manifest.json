@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Screenshot",
-  "version": "1.0.0",
-  "description": "Capture full pages, annotate, and share via Google Drive — no server needed.",
+  "name": "Captura",
+  "version": "1.1.0",
+  "description": "Capture any page, annotate with arrows and shapes, then copy or share via Google Drive — no server needed.",
 
   "permissions": [
     "activeTab",
@@ -31,7 +31,7 @@
   },
 
   "action": {
-    "default_title": "Screenshot — Capture & Annotate",
+    "default_title": "Captura — Capture & Annotate",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

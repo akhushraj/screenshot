@@ -102,7 +102,7 @@ async function getOrCreateFolder(token) {
 
   const search = await fetch(
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
-      "name='Screenshot' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+      "name='Captura' and mimeType='application/vnd.google-apps.folder' and trashed=false"
     )}&fields=files(id)`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
@@ -115,7 +115,7 @@ async function getOrCreateFolder(token) {
   const cr = await fetch('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'Screenshot', mimeType: 'application/vnd.google-apps.folder' }),
+    body: JSON.stringify({ name: 'Captura', mimeType: 'application/vnd.google-apps.folder' }),
   });
   const folder = await cr.json();
   await chrome.storage.sync.set({ driveFolderId: folder.id });

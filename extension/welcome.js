@@ -71,7 +71,7 @@ async function getOrCreateFolder(token) {
   if (stored.driveFolderId) return stored.driveFolderId;
 
   // 2. Search Drive for an existing "Screenshot" folder before creating a new one
-  const q   = encodeURIComponent("name='Screenshot' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+  const q   = encodeURIComponent("name='Captura' and mimeType='application/vnd.google-apps.folder' and trashed=false");
   const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -85,7 +85,7 @@ async function getOrCreateFolder(token) {
   const r = await fetch('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'Screenshot', mimeType: 'application/vnd.google-apps.folder' }),
+    body: JSON.stringify({ name: 'Captura', mimeType: 'application/vnd.google-apps.folder' }),
   });
   const folder = await r.json();
   await chrome.storage.sync.set({ driveFolderId: folder.id });
