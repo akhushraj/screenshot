@@ -22,6 +22,7 @@ const S = {
   preview: null,          // in-progress shape (not yet committed)
 
   textPending: null,      // { x, y } waiting for text input
+  editingIdx: -1,         // index of text annotation being re-edited (-1 = new)
 
   // Select / move
   selectedIdx: -1,        // index into annotations[], -1 = none
@@ -177,8 +178,14 @@ function setupEvents() {
   document.querySelectorAll('#stroke-popover .pop-opt').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      S.strokeWidth = parseInt(btn.dataset.width, 10);
-      localStorage.setItem('ss-stroke', S.strokeWidth);
+      const w = parseInt(btn.dataset.width, 10);
+      S.strokeWidth = w;
+      localStorage.setItem('ss-stroke', w);
+      // If an annotation is selected and supports stroke, update it live
+      if (S.selectedIdx >= 0) {
+        const ann = S.annotations[S.selectedIdx];
+        if (ann && ann.type !== 'text') { ann.width = w; render(); }
+      }
       updateStrokeIndicator();
       strokePopover.classList.remove('visible');
     });
@@ -211,8 +218,19 @@ function setupEvents() {
   document.querySelectorAll('#fsize-popover .pop-opt').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      S.textSize = btn.dataset.fsize;
-      localStorage.setItem('ss-text-size', S.textSize);
+      const fsize = btn.dataset.fsize;
+      S.textSize = fsize;
+      localStorage.setItem('ss-text-size', fsize);
+      // If a text annotation is selected, update its font size live
+      if (S.selectedIdx >= 0) {
+        const ann = S.annotations[S.selectedIdx];
+        if (ann && ann.type === 'text') {
+          const r = canvas.getBoundingClientRect();
+          ann.fontSize = Math.round((TEXT_SIZE_PX[fsize] ?? 20) * (canvas.width / r.width));
+          ann.sizeName = fsize;
+          render();
+        }
+      }
       updateFsizeIndicator();
       fsizePopover.classList.remove('visible');
     });
@@ -262,6 +280,7 @@ function setupEvents() {
 
   // Canvas mouse events
   canvas.addEventListener('mousedown',  onMouseDown);
+  canvas.addEventListener('dblclick',   onDblClick);
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mouseup',   onMouseUp);
 
@@ -529,35 +548,94 @@ function placeTextInput(imgX, imgY, clientX, clientY) {
   setTimeout(() => textInput.focus(), 0);
 }
 
+// ─────────────────────────────────────────────
+//  Double-click to re-edit text
+// ─────────────────────────────────────────────
+function onDblClick(e) {
+  const { x, y } = toImg(e);
+  for (let i = S.annotations.length - 1; i >= 0; i--) {
+    if (S.annotations[i].type === 'text' && hitTest(S.annotations[i], x, y)) {
+      // Cancel any in-progress draw that the first mousedown may have started
+      S.isDrawing = false;
+      S.isDraggingAnnotation = false;
+      S.preview = null;
+      startEditText(i);
+      return;
+    }
+  }
+}
+
+function startEditText(idx) {
+  const ann = S.annotations[idx];
+  S.editingIdx  = idx;
+  S.textPending = { x: ann.x, y: ann.y };
+
+  const r       = canvas.getBoundingClientRect();
+  const scaleX  = r.width  / canvas.width;
+  const cssSize = ann.fontSize * scaleX;       // image-px → CSS-px
+
+  textInput.style.color    = ann.color;
+  textInput.style.fontSize = `${cssSize}px`;
+  textInput.value          = ann.text;
+
+  textWrap.style.left    = `${r.left + ann.x * scaleX}px`;
+  textWrap.style.top     = `${r.top  + ann.y * scaleX - cssSize * 0.85}px`;
+  textWrap.style.display = 'block';
+  setTimeout(() => { textInput.focus(); textInput.select(); }, 0);
+
+  render(); // hides the annotation while the input is open
+}
+
 // CSS pixel sizes for each named text size
 const TEXT_SIZE_PX = { small: 12, medium: 20, large: 32 };
 
 function commitText() {
   if (!S.textPending) return;
   const val = textInput.value.trim();
+
   if (val) {
-    // Scale chosen CSS size to image-space pixels (handles retina captures).
     const r         = canvas.getBoundingClientRect();
     const imgPerCss = canvas.width / r.width;
-    const cssPx     = TEXT_SIZE_PX[S.textSize] ?? 20;
-    const fontSize  = Math.round(cssPx * imgPerCss);
-    S.annotations.push({
+
+    let fontSize, color, sizeName;
+    if (S.editingIdx >= 0) {
+      // Preserve the original annotation's style — only text content changes
+      const orig = S.annotations[S.editingIdx];
+      fontSize = orig.fontSize;
+      color    = orig.color;
+      sizeName = orig.sizeName || S.textSize;
+    } else {
+      const cssPx = TEXT_SIZE_PX[S.textSize] ?? 20;
+      fontSize = Math.round(cssPx * imgPerCss);
+      color    = S.color;
+      sizeName = S.textSize;
+    }
+
+    const ann = {
       type: 'text',
-      x: S.textPending.x,
-      y: S.textPending.y,
-      text: val,
-      color: S.color,
-      fontSize,
-    });
+      x: S.textPending.x, y: S.textPending.y,
+      text: val, color, fontSize, sizeName,
+    };
+
+    if (S.editingIdx >= 0) {
+      S.annotations[S.editingIdx] = ann;
+      S.selectedIdx = S.editingIdx;
+    } else {
+      S.annotations.push(ann);
+      S.selectedIdx = S.annotations.length - 1;
+    }
     render();
   }
   cancelText();
 }
 
 function cancelText() {
+  const wasEditing  = S.editingIdx >= 0;
+  S.editingIdx      = -1;
   S.textPending     = null;
   textWrap.style.display = 'none';
   textInput.value   = '';
+  if (wasEditing) render(); // restore the annotation that was hidden
 }
 
 // ─────────────────────────────────────────────
@@ -570,8 +648,10 @@ function render() {
   ctx.drawImage(S.image, 0, 0);
 
   // Finished annotations (drawn first so crop overlay can sit on top of them)
-  for (const ann of S.annotations) {
-    drawAnnotation(ctx, ann);
+  // Skip the one currently open in the text editor so the input overlays cleanly
+  for (let i = 0; i < S.annotations.length; i++) {
+    if (i === S.editingIdx) continue;
+    drawAnnotation(ctx, S.annotations[i]);
   }
 
   // Crop overlay — dims outside the crop box and redraws image+annotations inside.
@@ -796,7 +876,7 @@ const HINTS = {
   arrow:  'Drag to draw an arrow. Press ⌘↵ to share when done.',
   rect:   'Drag to draw a rectangle. Press ⌘↵ to share when done.',
   circle: 'Drag to draw a circle or oval. Press ⌘↵ to share when done.',
-  text:   'Click anywhere to place text. Press Enter to confirm, then ⌘↵ to share.',
+  text:   'Click to place text. Double-click existing text to edit it. Enter to confirm.',
   pen:    'Click and drag to draw freely. Use Select to move or delete strokes.',
 };
 function updateHint() {
