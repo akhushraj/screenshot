@@ -29,6 +29,11 @@ const S = {
   isDraggingAnnotation: false,
   dragLastX: 0,
   dragLastY: 0,
+
+  // Resize
+  isResizing: false,
+  resizeHandleId: null,
+  resizeOrigAnn: null,    // deep-copy of the annotation when resize started
 };
 
 // ─────────────────────────────────────────────
@@ -315,11 +320,132 @@ function setupEvents() {
 }
 
 // ─────────────────────────────────────────────
+//  Resize handles
+// ─────────────────────────────────────────────
+
+// Returns handle descriptors [{id, x, y}] in image coords for the selected annotation
+function getHandles(ann) {
+  if (ann.type === 'arrow') {
+    return [{ id: 'start', x: ann.x1, y: ann.y1 }, { id: 'end', x: ann.x2, y: ann.y2 }];
+  }
+  if (ann.type === 'rect') {
+    return [
+      { id: 'tl', x: ann.x,         y: ann.y         },
+      { id: 'tr', x: ann.x + ann.w, y: ann.y         },
+      { id: 'bl', x: ann.x,         y: ann.y + ann.h },
+      { id: 'br', x: ann.x + ann.w, y: ann.y + ann.h },
+    ];
+  }
+  if (ann.type === 'circle') {
+    return [
+      { id: 'tl', x: ann.cx - ann.rx, y: ann.cy - ann.ry },
+      { id: 'tr', x: ann.cx + ann.rx, y: ann.cy - ann.ry },
+      { id: 'bl', x: ann.cx - ann.rx, y: ann.cy + ann.ry },
+      { id: 'br', x: ann.cx + ann.rx, y: ann.cy + ann.ry },
+    ];
+  }
+  if (ann.type === 'text') {
+    const w = ann.text.length * ann.fontSize * 0.55;
+    return [{ id: 'br', x: ann.x + w, y: ann.y + 4 }];
+  }
+  if (ann.type === 'pen') {
+    const xs = ann.points.map(p => p.x), ys = ann.points.map(p => p.y);
+    const bx = Math.min(...xs), by = Math.min(...ys);
+    const bw = Math.max(...xs) - bx,   bh = Math.max(...ys) - by;
+    return [
+      { id: 'tl', x: bx,      y: by      },
+      { id: 'tr', x: bx + bw, y: by      },
+      { id: 'bl', x: bx,      y: by + bh },
+      { id: 'br', x: bx + bw, y: by + bh },
+    ];
+  }
+  return [];
+}
+
+// Returns handle id if (px,py) is within ~10 CSS px of any handle, else null
+function hitTestHandle(ann, px, py) {
+  const r    = canvas.getBoundingClientRect();
+  const hitR = 10 * (canvas.width / r.width);   // 10 CSS px in image px
+  for (const h of getHandles(ann)) {
+    if (Math.hypot(px - h.x, py - h.y) <= hitR) return h.id;
+  }
+  return null;
+}
+
+// Mutates ann to apply the resize drag
+function applyResize(ann, handleId, mx, my, orig) {
+  if (ann.type === 'arrow') {
+    if (handleId === 'start') { ann.x1 = mx; ann.y1 = my; }
+    if (handleId === 'end')   { ann.x2 = mx; ann.y2 = my; }
+    return;
+  }
+  if (ann.type === 'rect') {
+    const right = orig.x + orig.w, bottom = orig.y + orig.h;
+    if (handleId === 'tl') { ann.x = mx; ann.y = my; ann.w = right - mx;  ann.h = bottom - my; }
+    if (handleId === 'tr') {             ann.y = my; ann.w = mx - orig.x; ann.h = bottom - my; }
+    if (handleId === 'bl') { ann.x = mx;             ann.w = right - mx;  ann.h = my - orig.y; }
+    if (handleId === 'br') {                          ann.w = mx - orig.x; ann.h = my - orig.y; }
+    if (ann.w < 0) { ann.x += ann.w; ann.w = -ann.w; }
+    if (ann.h < 0) { ann.y += ann.h; ann.h = -ann.h; }
+    return;
+  }
+  if (ann.type === 'circle') {
+    const ops = { tl: [1,1], tr: [-1,1], bl: [1,-1], br: [-1,-1] };
+    const [sx, sy] = ops[handleId] || [1,1];
+    const fx = orig.cx + sx * orig.rx, fy = orig.cy + sy * orig.ry;
+    ann.cx = (fx + mx) / 2;
+    ann.cy = (fy + my) / 2;
+    ann.rx = Math.max(1, Math.abs(mx - fx) / 2);
+    ann.ry = Math.max(1, Math.abs(my - fy) / 2);
+    return;
+  }
+  if (ann.type === 'text' && handleId === 'br') {
+    const r       = canvas.getBoundingClientRect();
+    const imgPerCss = canvas.width / r.width;
+    const newW    = Math.max(20, mx - orig.x);
+    const chars   = Math.max(1, orig.text.length);
+    ann.fontSize  = Math.max(8 * imgPerCss, Math.min(120 * imgPerCss, newW / (chars * 0.55)));
+    return;
+  }
+  if (ann.type === 'pen') {
+    const xs = orig.points.map(p => p.x), ys = orig.points.map(p => p.y);
+    const obx = Math.min(...xs), oby = Math.min(...ys);
+    const obw = Math.max(...xs) - obx, obh = Math.max(...ys) - oby;
+    if (obw === 0 || obh === 0) return;
+    const ops = { tl: [1,1], tr: [-1,1], bl: [1,-1], br: [-1,-1] };
+    const [sx, sy] = ops[handleId] || [-1,-1];
+    const fx = obx + (sx > 0 ? obw : 0), fy = oby + (sy > 0 ? obh : 0);
+    const nbx = Math.min(fx, mx), nby = Math.min(fy, my);
+    const nbw = Math.abs(mx - fx),  nbh = Math.abs(my - fy);
+    ann.points = orig.points.map(p => ({
+      x: nbx + (p.x - obx) / obw * nbw,
+      y: nby + (p.y - oby) / obh * nbh,
+    }));
+    return;
+  }
+}
+
+const HANDLE_CURSORS = { tl: 'nw-resize', tr: 'ne-resize', bl: 'sw-resize', br: 'se-resize', start: 'crosshair', end: 'crosshair' };
+
+// ─────────────────────────────────────────────
 //  Mouse handlers
 // ─────────────────────────────────────────────
 function onMouseDown(e) {
   if (e.button !== 0) return;
   const { x, y } = toImg(e);
+
+  // ── Check resize handles first (works in any tool when annotation is selected) ──
+  if (S.selectedIdx >= 0 && S.tool !== 'crop') {
+    const ann = S.annotations[S.selectedIdx];
+    const handleId = ann && hitTestHandle(ann, x, y);
+    if (handleId) {
+      S.isResizing      = true;
+      S.resizeHandleId  = handleId;
+      S.resizeOrigAnn   = JSON.parse(JSON.stringify(ann));
+      canvas.style.cursor = HANDLE_CURSORS[handleId] || 'nw-resize';
+      return;
+    }
+  }
 
   // ── Select tool ──
   if (S.tool === 'select') {
@@ -372,6 +498,13 @@ function onMouseDown(e) {
 function onMouseMove(e) {
   const { x, y } = toImg(e);
 
+  // Resizing a selected annotation
+  if (S.isResizing && S.selectedIdx >= 0) {
+    applyResize(S.annotations[S.selectedIdx], S.resizeHandleId, x, y, S.resizeOrigAnn);
+    render();
+    return;
+  }
+
   // Moving a selected annotation
   if (S.isDraggingAnnotation && S.selectedIdx >= 0) {
     const dx = x - S.dragLastX;
@@ -384,6 +517,14 @@ function onMouseMove(e) {
   }
 
   if (!S.isDrawing) {
+    // Show resize cursors over handles of selected annotation
+    if (S.selectedIdx >= 0 && S.tool !== 'crop') {
+      const ann = S.annotations[S.selectedIdx];
+      if (ann) {
+        const hid = hitTestHandle(ann, x, y);
+        if (hid) { canvas.style.cursor = HANDLE_CURSORS[hid] || 'nw-resize'; return; }
+      }
+    }
     // Update cursor when hovering in select mode
     if (S.tool === 'select') {
       const hovering = S.annotations.some(a => hitTest(a, x, y));
@@ -407,6 +548,16 @@ function onMouseMove(e) {
 }
 
 function onMouseUp(e) {
+  // Stop resize
+  if (S.isResizing) {
+    S.isResizing     = false;
+    S.resizeHandleId = null;
+    S.resizeOrigAnn  = null;
+    canvas.style.cursor = S.tool === 'select' ? 'default' : 'crosshair';
+    render();
+    return;
+  }
+
   // Stop annotation drag
   if (S.isDraggingAnnotation) {
     S.isDraggingAnnotation = false;
@@ -825,31 +976,17 @@ function drawCropBox(r) {
 function drawSelectionHandles(c, ann) {
   const cssScale = canvas.getBoundingClientRect().width / canvas.width;
   const lw  = 1.5 / cssScale;
-  const hs  = 5  / cssScale;   // handle half-size
-  const pad = 8  / cssScale;
+  const hs  = 5   / cssScale;   // handle square half-size
+  const pad = 8   / cssScale;
 
   c.save();
   c.strokeStyle = '#1a73e8';
-  c.fillStyle   = '#1a73e8';
   c.lineWidth   = lw;
   c.setLineDash([5 / cssScale, 3 / cssScale]);
 
-  if (ann.type === 'arrow') {
-    // Draw dots at both endpoints
-    c.setLineDash([]);
-    [[ann.x1, ann.y1], [ann.x2, ann.y2]].forEach(([hx, hy]) => {
-      c.beginPath();
-      c.arc(hx, hy, hs * 1.6, 0, Math.PI * 2);
-      c.fill();
-    });
-  } else if (ann.type === 'rect') {
+  // Draw bounding outline
+  if (ann.type === 'rect') {
     c.strokeRect(ann.x - pad, ann.y - pad, ann.w + pad * 2, ann.h + pad * 2);
-    [[ann.x - pad, ann.y - pad], [ann.x + ann.w + pad, ann.y - pad],
-     [ann.x - pad, ann.y + ann.h + pad], [ann.x + ann.w + pad, ann.y + ann.h + pad]].forEach(([hx, hy]) => {
-      c.setLineDash([]);
-      c.fillRect(hx - hs, hy - hs, hs * 2, hs * 2);
-      c.setLineDash([5 / cssScale, 3 / cssScale]);
-    });
   } else if (ann.type === 'circle') {
     c.beginPath();
     c.ellipse(ann.cx, ann.cy, ann.rx + pad, ann.ry + pad, 0, 0, Math.PI * 2);
@@ -858,11 +995,29 @@ function drawSelectionHandles(c, ann) {
     const w = ann.text.length * ann.fontSize * 0.55;
     c.strokeRect(ann.x - pad, ann.y - ann.fontSize - pad, w + pad * 2, ann.fontSize + pad * 2);
   } else if (ann.type === 'pen') {
-    const xs = ann.points.map(p => p.x);
-    const ys = ann.points.map(p => p.y);
+    const xs = ann.points.map(p => p.x), ys = ann.points.map(p => p.y);
     const bx = Math.min(...xs), by = Math.min(...ys);
-    const bw = Math.max(...xs) - bx,  bh = Math.max(...ys) - by;
+    const bw = Math.max(...xs) - bx, bh = Math.max(...ys) - by;
     c.strokeRect(bx - pad, by - pad, bw + pad * 2, bh + pad * 2);
+  }
+
+  // Draw handles from getHandles — white square with blue border
+  c.setLineDash([]);
+  for (const { x, y, id } of getHandles(ann)) {
+    if (id === 'start' || id === 'end') {
+      // Arrow endpoints: filled circle
+      c.fillStyle = '#1a73e8';
+      c.beginPath();
+      c.arc(x, y, hs * 1.6, 0, Math.PI * 2);
+      c.fill();
+    } else {
+      // Corner handles: white fill, blue border
+      c.fillStyle = '#ffffff';
+      c.strokeStyle = '#1a73e8';
+      c.lineWidth = lw * 1.5;
+      c.fillRect(x - hs, y - hs, hs * 2, hs * 2);
+      c.strokeRect(x - hs, y - hs, hs * 2, hs * 2);
+    }
   }
   c.restore();
 }
