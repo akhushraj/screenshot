@@ -349,8 +349,7 @@ function getHandles(ann) {
     ];
   }
   if (ann.type === 'text') {
-    const w = ann.text.length * ann.fontSize * 0.55;
-    return [{ id: 'br', x: ann.x + w, y: ann.y + 4 }];
+    return []; // no drag handles for text — use the font size popover to resize
   }
   if (ann.type === 'pen') {
     const xs = ann.points.map(p => p.x), ys = ann.points.map(p => p.y);
@@ -967,8 +966,11 @@ function drawCropBox(r) {
   ctx.clearRect(r.x, r.y, r.w, r.h);
   // Redraw image in selected region on top of cleared area
   ctx.drawImage(S.image, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
-  // Re-draw any annotations inside the region
-  for (const ann of S.annotations) drawAnnotation(ctx, ann);
+  // Re-draw annotations inside the region (skip the one being edited)
+  for (let i = 0; i < S.annotations.length; i++) {
+    if (i === S.editingIdx) continue;
+    drawAnnotation(ctx, S.annotations[i]);
+  }
   // Dashed border
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth   = lw;
