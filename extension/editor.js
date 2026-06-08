@@ -36,6 +36,10 @@ const S = {
   resizeOrigAnn: null,    // deep-copy of the annotation when resize started
 };
 
+// Prevents blur from firing commitText while we are programmatically
+// transitioning between text inputs (place → commit → reopen).
+let _suppressBlur = false;
+
 // ─────────────────────────────────────────────
 //  DOM refs
 // ─────────────────────────────────────────────
@@ -316,7 +320,7 @@ function setupEvents() {
     if (e.key === 'Escape') cancelText();
     e.stopPropagation();
   });
-  textInput.addEventListener('blur', commitText);
+  textInput.addEventListener('blur', () => { if (!_suppressBlur) commitText(); });
 }
 
 // ─────────────────────────────────────────────
@@ -481,6 +485,8 @@ function onMouseDown(e) {
 
   // ── Drawing tools ──
   if (S.tool === 'text') {
+    _suppressBlur = true;
+    commitText();            // save any text already typed before opening a new input
     placeTextInput(x, y, e.clientX, e.clientY);
     return;
   }
@@ -683,20 +689,21 @@ function undo() {
 //  Text tool
 // ─────────────────────────────────────────────
 function placeTextInput(imgX, imgY, clientX, clientY) {
-  S.textPending = { x: imgX, y: imgY };
+  _suppressBlur = true;   // hold until focus is established
 
-  const cssPx = TEXT_SIZE_PX[S.textSize] ?? 20;
-
+  S.textPending            = { x: imgX, y: imgY };
+  const cssPx              = TEXT_SIZE_PX[S.textSize] ?? 20;
   textInput.style.color    = S.color;
   textInput.style.fontSize = `${cssPx}px`;
   textInput.value          = '';
+  textWrap.style.left      = `${clientX}px`;
+  textWrap.style.top       = `${clientY - cssPx * 0.85}px`;
+  textWrap.style.display   = 'block';
 
-  // Position: fixed relative to viewport
-  textWrap.style.left    = `${clientX}px`;
-  textWrap.style.top     = `${clientY - cssPx * 0.85}px`;
-  textWrap.style.display = 'block';
-  // Defer focus — mousedown steals it back if we call synchronously
-  setTimeout(() => textInput.focus(), 0);
+  setTimeout(() => {
+    _suppressBlur = false;
+    textInput.focus();
+  }, 0);
 }
 
 // ─────────────────────────────────────────────
@@ -717,24 +724,31 @@ function onDblClick(e) {
 }
 
 function startEditText(idx) {
+  _suppressBlur = true;   // prevent stale blur from committing during transition
+  commitText();           // save any text currently in the input before switching
+
   const ann = S.annotations[idx];
   S.editingIdx  = idx;
   S.textPending = { x: ann.x, y: ann.y };
 
   const r       = canvas.getBoundingClientRect();
-  const scaleX  = r.width  / canvas.width;
-  const cssSize = ann.fontSize * scaleX;       // image-px → CSS-px
+  const scaleX  = r.width / canvas.width;
+  const cssSize = ann.fontSize * scaleX;
 
   textInput.style.color    = ann.color;
   textInput.style.fontSize = `${cssSize}px`;
   textInput.value          = ann.text;
+  textWrap.style.left      = `${r.left + ann.x * scaleX}px`;
+  textWrap.style.top       = `${r.top  + ann.y * scaleX - cssSize * 0.85}px`;
+  textWrap.style.display   = 'block';
 
-  textWrap.style.left    = `${r.left + ann.x * scaleX}px`;
-  textWrap.style.top     = `${r.top  + ann.y * scaleX - cssSize * 0.85}px`;
-  textWrap.style.display = 'block';
-  setTimeout(() => { textInput.focus(); textInput.select(); }, 0);
+  render(); // hide the canvas annotation while the input is open
 
-  render(); // hides the annotation while the input is open
+  setTimeout(() => {
+    _suppressBlur = false;
+    textInput.focus();
+    textInput.select();
+  }, 0);
 }
 
 // CSS pixel sizes for each named text size
