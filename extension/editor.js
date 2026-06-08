@@ -40,6 +40,9 @@ const S = {
 // transitioning between text inputs (place → commit → reopen).
 let _suppressBlur = false;
 
+// Saved state before a crop is applied — used by undo
+let _preCropState = null;
+
 // ─────────────────────────────────────────────
 //  DOM refs
 // ─────────────────────────────────────────────
@@ -250,12 +253,8 @@ function setupEvents() {
   // Undo
   document.getElementById('undo-btn').addEventListener('click', undo);
 
-  // Clear crop
-  document.getElementById('clear-crop-btn').addEventListener('click', () => {
-    S.cropRegion = null;
-    S.cropPreview = null;
-    render();
-  });
+  // Clear-crop button now acts as undo-crop
+  document.getElementById('clear-crop-btn').addEventListener('click', undo);
 
   // Share
   document.getElementById('share-btn').addEventListener('click', doShare);
@@ -579,8 +578,10 @@ function onMouseUp(e) {
   const dy = Math.abs(y - S.startY);
 
   if (S.tool === 'crop') {
-    if (dx > 4 || dy > 4) S.cropRegion = normalizeRect(S.startX, S.startY, x, y);
     S.cropPreview = null;
+    if (dx > 4 || dy > 4) applyCrop(normalizeRect(S.startX, S.startY, x, y));
+    else render();
+    return;
   } else if (S.preview) {
     // Commit pen strokes regardless of start/end distance (path may loop back)
     const commit = dx > 2 || dy > 2 || S.tool === 'arrow' ||
@@ -590,6 +591,7 @@ function onMouseUp(e) {
       S.selectedIdx = S.annotations.length - 1;
     }
     S.preview = null;
+    canvas.style.cursor = 'crosshair'; // prevent residual resize cursor at the release point
   }
   render();
 }
@@ -673,13 +675,63 @@ function moveAnnotation(ann, dx, dy) {
 }
 
 // ─────────────────────────────────────────────
+//  Apply crop (immediate — replaces image)
+// ─────────────────────────────────────────────
+async function applyCrop(region) {
+  const ox = Math.round(region.x), oy = Math.round(region.y);
+  const ow = Math.round(region.w), oh = Math.round(region.h);
+
+  // Snapshot state so ⌘Z can restore
+  _preCropState = {
+    image:       S.image,
+    annotations: JSON.parse(JSON.stringify(S.annotations)),
+  };
+
+  // Render the cropped slice into a new image
+  const off = new OffscreenCanvas(ow, oh);
+  const c   = off.getContext('2d');
+  c.drawImage(S.image, ox, oy, ow, oh, 0, 0, ow, oh);
+  const blob = await off.convertToBlob({ type: 'image/png' });
+  const url  = URL.createObjectURL(blob);
+
+  await new Promise(resolve => {
+    const img  = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      S.image = img;
+
+      // Shift every annotation into the new coordinate space
+      for (const ann of S.annotations) moveAnnotation(ann, -ox, -oy);
+
+      S.cropRegion  = null;
+      S.cropPreview = null;
+      S.selectedIdx = -1;
+
+      setupCanvas();
+      render();
+      resolve();
+    };
+    img.src = url;
+  });
+}
+
+// ─────────────────────────────────────────────
 //  Undo
 // ─────────────────────────────────────────────
 function undo() {
+  // Undo a crop first if one was applied
+  if (_preCropState) {
+    S.image       = _preCropState.image;
+    S.annotations = _preCropState.annotations;
+    _preCropState = null;
+    S.cropRegion  = null;
+    S.selectedIdx = -1;
+    setupCanvas();
+    render();
+    return;
+  }
   if (S.annotations.length > 0) {
     S.annotations.pop();
-  } else if (S.cropRegion) {
-    S.cropRegion = null;
   }
   render();
 }
