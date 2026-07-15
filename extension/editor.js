@@ -36,12 +36,53 @@ const S = {
   resizeOrigAnn: null,    // deep-copy of the annotation when resize started
 };
 
-// Prevents blur from firing commitText while we are programmatically
-// transitioning between text inputs (place → commit → reopen).
 let _suppressBlur = false;
+let _dragMoved    = false;
 
-// Saved state before a crop is applied — used by undo
-let _preCropState = null;
+// Undo / redo history — each entry: { image, annotations }
+const _history  = [];
+let _historyIdx = -1;
+
+function pushHistory() {
+  _history.splice(_historyIdx + 1);
+  _history.push({ image: S.image, annotations: JSON.parse(JSON.stringify(S.annotations)) });
+  _historyIdx = _history.length - 1;
+  if (_history.length > 50) { _history.shift(); _historyIdx--; }
+  updateUndoRedo();
+}
+
+function restoreHistory(entry) {
+  const imgChanged = entry.image !== S.image;
+  S.image       = entry.image;
+  S.annotations = JSON.parse(JSON.stringify(entry.annotations));
+  S.selectedIdx = -1;
+  S.cropRegion  = null;
+  S.cropPreview = null;
+  S.isDrawing   = false;
+  S.preview     = null;
+  if (imgChanged) setupCanvas();
+  render();
+  updateUndoRedo();
+}
+
+function updateUndoRedo() {
+  const u = document.getElementById('undo-btn');
+  const r = document.getElementById('redo-btn');
+  if (u) u.disabled = _historyIdx <= 0;
+  if (r) r.disabled = _historyIdx >= _history.length - 1;
+}
+
+function undo() {
+  if (_historyIdx <= 0) return;
+  _historyIdx--;
+  restoreHistory(_history[_historyIdx]);
+}
+
+function redo() {
+  if (_historyIdx >= _history.length - 1) return;
+  _historyIdx++;
+  restoreHistory(_history[_historyIdx]);
+}
 
 // ─────────────────────────────────────────────
 //  DOM refs
@@ -78,6 +119,7 @@ const copyCopied = document.getElementById('copy-copied');
     setupCanvas();
     setupEvents();
     render();
+    pushHistory();
   };
   img.onerror = () => showError('Failed to decode screenshot.');
   img.src = `data:image/png;base64,${base64}`;
@@ -250,10 +292,8 @@ function setupEvents() {
 
   updateFsizeIndicator();
 
-  // Undo
   document.getElementById('undo-btn').addEventListener('click', undo);
-
-  // Clear-crop button now acts as undo-crop
+  document.getElementById('redo-btn').addEventListener('click', redo);
   document.getElementById('clear-crop-btn').addEventListener('click', undo);
 
   // Share
@@ -295,12 +335,14 @@ function setupEvents() {
   // Keyboard
   document.addEventListener('keydown', e => {
     if (e.target === textInput) return; // let text input handle its own keys
-    if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); undo(); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z' &&  e.shiftKey) { e.preventDefault(); redo(); }
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); doShare(); }
     if ((e.key === 'Delete' || e.key === 'Backspace') && S.selectedIdx >= 0) {
       e.preventDefault();
       S.annotations.splice(S.selectedIdx, 1);
       S.selectedIdx = -1;
+      pushHistory();
       render();
     }
     if (e.key === 'Escape') {
@@ -313,11 +355,14 @@ function setupEvents() {
     }
   });
 
-  // Text input
   textInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') commitText();
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitText(); }
     if (e.key === 'Escape') cancelText();
     e.stopPropagation();
+  });
+  textInput.addEventListener('input', () => {
+    textInput.style.height = 'auto';
+    textInput.style.height = textInput.scrollHeight + 'px';
   });
   textInput.addEventListener('blur', () => { if (!_suppressBlur) commitText(); });
 }
@@ -348,7 +393,8 @@ function getHandles(ann) {
     ];
   }
   if (ann.type === 'text') {
-    return []; // no drag handles for text — use the font size popover to resize
+    const bb = getTextBBox(ann);
+    return [{ id: 'mr', x: bb.x + bb.w, y: bb.y + bb.h / 2 }];
   }
   if (ann.type === 'pen') {
     const xs = ann.points.map(p => p.x), ys = ann.points.map(p => p.y);
@@ -401,12 +447,8 @@ function applyResize(ann, handleId, mx, my, orig) {
     ann.ry = Math.max(1, Math.abs(my - fy) / 2);
     return;
   }
-  if (ann.type === 'text' && handleId === 'br') {
-    const r       = canvas.getBoundingClientRect();
-    const imgPerCss = canvas.width / r.width;
-    const newW    = Math.max(20, mx - orig.x);
-    const chars   = Math.max(1, orig.text.length);
-    ann.fontSize  = Math.max(8 * imgPerCss, Math.min(120 * imgPerCss, newW / (chars * 0.55)));
+  if (ann.type === 'text' && handleId === 'mr') {
+    ann.maxWidth = Math.max(ann.fontSize * 2, mx - orig.x);
     return;
   }
   if (ann.type === 'pen') {
@@ -427,7 +469,7 @@ function applyResize(ann, handleId, mx, my, orig) {
   }
 }
 
-const HANDLE_CURSORS = { tl: 'nw-resize', tr: 'ne-resize', bl: 'sw-resize', br: 'se-resize', start: 'crosshair', end: 'crosshair' };
+const HANDLE_CURSORS = { tl: 'nw-resize', tr: 'ne-resize', bl: 'sw-resize', br: 'se-resize', start: 'crosshair', end: 'crosshair', mr: 'ew-resize' };
 
 // ─────────────────────────────────────────────
 //  Mouse handlers
@@ -460,6 +502,7 @@ function onMouseDown(e) {
       S.isDraggingAnnotation = true;
       S.dragLastX = x;
       S.dragLastY = y;
+      _dragMoved  = false;
       canvas.style.cursor = 'grabbing';
     }
     render();
@@ -474,6 +517,7 @@ function onMouseDown(e) {
         S.isDraggingAnnotation = true;
         S.dragLastX = x;
         S.dragLastY = y;
+        _dragMoved  = false;
         canvas.style.cursor = 'grabbing';
         render();
         return;
@@ -516,6 +560,7 @@ function onMouseMove(e) {
     moveAnnotation(S.annotations[S.selectedIdx], dx, dy);
     S.dragLastX = x;
     S.dragLastY = y;
+    _dragMoved  = true;
     render();
     return;
   }
@@ -558,6 +603,7 @@ function onMouseUp(e) {
     S.resizeHandleId = null;
     S.resizeOrigAnn  = null;
     canvas.style.cursor = S.tool === 'select' ? 'default' : 'crosshair';
+    pushHistory();
     render();
     return;
   }
@@ -566,6 +612,7 @@ function onMouseUp(e) {
   if (S.isDraggingAnnotation) {
     S.isDraggingAnnotation = false;
     canvas.style.cursor = 'grab';
+    if (_dragMoved) { pushHistory(); _dragMoved = false; }
     render();
     return;
   }
@@ -589,9 +636,10 @@ function onMouseUp(e) {
     if (commit) {
       S.annotations.push(S.preview);
       S.selectedIdx = S.annotations.length - 1;
+      pushHistory();
     }
     S.preview = null;
-    canvas.style.cursor = 'crosshair'; // prevent residual resize cursor at the release point
+    canvas.style.cursor = 'crosshair';
   }
   render();
 }
@@ -645,8 +693,8 @@ function hitTest(ann, px, py) {
     return Math.abs(Math.hypot(ddx, ddy) - 1) < margin;
   }
   if (ann.type === 'text') {
-    const w = ann.text.length * ann.fontSize * 0.55;
-    return px >= ann.x - 4 && px <= ann.x + w && py >= ann.y - ann.fontSize && py <= ann.y + 4;
+    const bb = getTextBBox(ann);
+    return px >= bb.x - 4 && px <= bb.x + bb.w + 4 && py >= bb.y - 4 && py <= bb.y + bb.h + 4;
   }
   if (ann.type === 'pen') {
     const pts = ann.points;
@@ -681,12 +729,6 @@ async function applyCrop(region) {
   const ox = Math.round(region.x), oy = Math.round(region.y);
   const ow = Math.round(region.w), oh = Math.round(region.h);
 
-  // Snapshot state so ⌘Z can restore
-  _preCropState = {
-    image:       S.image,
-    annotations: JSON.parse(JSON.stringify(S.annotations)),
-  };
-
   // Render the cropped slice into a new image
   const off = new OffscreenCanvas(ow, oh);
   const c   = off.getContext('2d');
@@ -708,6 +750,7 @@ async function applyCrop(region) {
       S.selectedIdx = -1;
 
       setupCanvas();
+      pushHistory();
       render();
       resolve();
     };
@@ -716,45 +759,68 @@ async function applyCrop(region) {
 }
 
 // ─────────────────────────────────────────────
-//  Undo
+//  Text word-wrap helpers
 // ─────────────────────────────────────────────
-function undo() {
-  // Undo a crop first if one was applied
-  if (_preCropState) {
-    S.image       = _preCropState.image;
-    S.annotations = _preCropState.annotations;
-    _preCropState = null;
-    S.cropRegion  = null;
-    S.selectedIdx = -1;
-    setupCanvas();
-    render();
-    return;
+
+// Returns lines array for ann, wrapping to ann.maxWidth using context c (defaults to main ctx)
+function getTextLines(ann, c = ctx) {
+  const paragraphs = ann.text.split('\n');
+  if (!ann.maxWidth) return paragraphs;
+  c.font = `bold ${ann.fontSize}px Arial, sans-serif`;
+  const lines = [];
+  for (const para of paragraphs) {
+    if (!para) { lines.push(''); continue; }
+    const words = para.split(' ');
+    let current = '';
+    for (const word of words) {
+      const test = current ? current + ' ' + word : word;
+      if (c.measureText(test).width <= ann.maxWidth) {
+        current = test;
+      } else {
+        if (current) lines.push(current);
+        current = word;
+      }
+    }
+    lines.push(current || '');
   }
-  if (S.annotations.length > 0) {
-    S.annotations.pop();
+  return lines.length > 0 ? lines : [ann.text];
+}
+
+// Returns bounding box {x,y,w,h} in image coords (y = top of first line)
+function getTextBBox(ann) {
+  const lines      = getTextLines(ann);
+  const lineHeight = ann.fontSize * 1.2;
+  const h          = lines.length * lineHeight;
+  let w;
+  if (ann.maxWidth) {
+    w = ann.maxWidth;
+  } else {
+    ctx.font = `bold ${ann.fontSize}px Arial, sans-serif`;
+    w = Math.max(...lines.map(l => ctx.measureText(l).width || 1));
   }
-  render();
+  return { x: ann.x, y: ann.y - ann.fontSize, w, h };
 }
 
 // ─────────────────────────────────────────────
 //  Text tool
 // ─────────────────────────────────────────────
 function placeTextInput(imgX, imgY, clientX, clientY) {
-  _suppressBlur = true;   // hold until focus is established
+  _suppressBlur = true;
 
   S.textPending            = { x: imgX, y: imgY };
   const cssPx              = TEXT_SIZE_PX[S.textSize] ?? 20;
-  textInput.style.color    = S.color;
-  textInput.style.fontSize = `${cssPx}px`;
-  textInput.value          = '';
-  textWrap.style.left      = `${clientX}px`;
-  textWrap.style.top       = `${clientY - cssPx * 0.85}px`;
-  textWrap.style.display   = 'block';
+  textInput.style.color      = S.color;
+  textInput.style.fontSize   = `${cssPx}px`;
+  textInput.style.lineHeight = '1.2';
+  textInput.style.width      = '';
+  textInput.style.whiteSpace = 'pre';
+  textInput.style.height     = 'auto';
+  textInput.value            = '';
+  textWrap.style.left        = `${clientX}px`;
+  textWrap.style.top         = `${clientY - cssPx * 0.85}px`;
+  textWrap.style.display     = 'block';
 
-  setTimeout(() => {
-    _suppressBlur = false;
-    textInput.focus();
-  }, 0);
+  setTimeout(() => { _suppressBlur = false; textInput.focus(); }, 0);
 }
 
 // ─────────────────────────────────────────────
@@ -775,27 +841,39 @@ function onDblClick(e) {
 }
 
 function startEditText(idx) {
-  _suppressBlur = true;   // prevent stale blur from committing during transition
-  commitText();           // save any text currently in the input before switching
+  _suppressBlur = true;
+  commitText();
 
   const ann = S.annotations[idx];
   S.editingIdx  = idx;
   S.textPending = { x: ann.x, y: ann.y };
 
-  const r       = canvas.getBoundingClientRect();
-  const scaleX  = r.width / canvas.width;
+  const r      = canvas.getBoundingClientRect();
+  const scaleX = r.width / canvas.width;
   const cssSize = ann.fontSize * scaleX;
 
-  textInput.style.color    = ann.color;
-  textInput.style.fontSize = `${cssSize}px`;
-  textInput.value          = ann.text;
-  textWrap.style.left      = `${r.left + ann.x * scaleX}px`;
-  textWrap.style.top       = `${r.top  + ann.y * scaleX - cssSize * 0.85}px`;
-  textWrap.style.display   = 'block';
+  textInput.style.color      = ann.color;
+  textInput.style.fontSize   = `${cssSize}px`;
+  textInput.style.lineHeight = '1.2';
+  textInput.style.height     = 'auto';
 
-  render(); // hide the canvas annotation while the input is open
+  if (ann.maxWidth) {
+    textInput.style.width      = `${ann.maxWidth * scaleX}px`;
+    textInput.style.whiteSpace = 'pre-wrap';
+  } else {
+    textInput.style.width      = '';
+    textInput.style.whiteSpace = 'pre';
+  }
+
+  textInput.value        = ann.text;
+  textWrap.style.left    = `${r.left + ann.x * scaleX}px`;
+  textWrap.style.top     = `${r.top  + ann.y * scaleX - cssSize * 0.85}px`;
+  textWrap.style.display = 'block';
+
+  render();
 
   setTimeout(() => {
+    textInput.style.height = textInput.scrollHeight + 'px';
     _suppressBlur = false;
     textInput.focus();
     textInput.select();
@@ -813,24 +891,25 @@ function commitText() {
     const r         = canvas.getBoundingClientRect();
     const imgPerCss = canvas.width / r.width;
 
-    let fontSize, color, sizeName;
+    let fontSize, color, sizeName, maxWidth;
     if (S.editingIdx >= 0) {
-      // Preserve the original annotation's style — only text content changes
       const orig = S.annotations[S.editingIdx];
       fontSize = orig.fontSize;
       color    = orig.color;
       sizeName = orig.sizeName || S.textSize;
+      maxWidth = orig.maxWidth;
     } else {
       const cssPx = TEXT_SIZE_PX[S.textSize] ?? 20;
       fontSize = Math.round(cssPx * imgPerCss);
       color    = S.color;
       sizeName = S.textSize;
+      maxWidth = null;
     }
 
     const ann = {
       type: 'text',
       x: S.textPending.x, y: S.textPending.y,
-      text: val, color, fontSize, sizeName,
+      text: val, color, fontSize, sizeName, maxWidth,
     };
 
     if (S.editingIdx >= 0) {
@@ -840,6 +919,7 @@ function commitText() {
       S.annotations.push(ann);
       S.selectedIdx = S.annotations.length - 1;
     }
+    pushHistory();
     render();
   }
   cancelText();
@@ -967,15 +1047,19 @@ function drawCircle(c, { cx, cy, rx, ry, color, width }) {
   c.stroke();
 }
 
-function drawText(c, { x, y, text, color, fontSize }) {
-  c.font         = `bold ${fontSize}px Arial, sans-serif`;
-  c.lineWidth    = Math.max(3, fontSize / 6);
-  c.lineJoin     = 'round';
-  // Contrast outline
-  c.strokeStyle  = (color === '#000000' || color === '#000') ? '#fff' : '#111';
-  c.strokeText(text, x, y);
-  c.fillStyle    = color;
-  c.fillText(text, x, y);
+function drawText(c, ann) {
+  const { x, y, color, fontSize } = ann;
+  c.font        = `bold ${fontSize}px Arial, sans-serif`;
+  c.lineWidth   = Math.max(3, fontSize / 6);
+  c.lineJoin    = 'round';
+  c.strokeStyle = (color === '#000000' || color === '#000') ? '#fff' : '#111';
+  c.fillStyle   = color;
+  const lineHeight = fontSize * 1.2;
+  const lines = getTextLines(ann, c);
+  lines.forEach((line, i) => {
+    c.strokeText(line, x, y + i * lineHeight);
+    c.fillText(line, x, y + i * lineHeight);
+  });
 }
 
 function drawPen(c, { points, color, width }) {
@@ -1060,8 +1144,8 @@ function drawSelectionHandles(c, ann) {
     c.ellipse(ann.cx, ann.cy, ann.rx + pad, ann.ry + pad, 0, 0, Math.PI * 2);
     c.stroke();
   } else if (ann.type === 'text') {
-    const w = ann.text.length * ann.fontSize * 0.55;
-    c.strokeRect(ann.x - pad, ann.y - ann.fontSize - pad, w + pad * 2, ann.fontSize + pad * 2);
+    const bb = getTextBBox(ann);
+    c.strokeRect(bb.x - pad, bb.y - pad, bb.w + pad * 2, bb.h + pad * 2);
   } else if (ann.type === 'pen') {
     const xs = ann.points.map(p => p.x), ys = ann.points.map(p => p.y);
     const bx = Math.min(...xs), by = Math.min(...ys);

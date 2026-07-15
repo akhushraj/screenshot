@@ -213,6 +213,12 @@
       font-weight: bold;
       min-width: 80px;
       padding: 0 2px;
+      resize: none;
+      overflow: hidden;
+      line-height: 1.2;
+      white-space: pre;
+      word-break: break-word;
+      display: block;
     }
 
     /* ── Modals ── */
@@ -453,14 +459,21 @@
 
     <div class="tb-divider"></div>
 
-    <button class="tool-btn" id="undo-btn" title="Undo (⌘Z / Ctrl+Z)">
+    <button class="tool-btn" id="undo-btn" title="Undo (⌘Z)">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="1 4 1 10 7 10"/>
         <path d="M3.51 15a9 9 0 1 0 .49-3.51"/>
       </svg>
     </button>
 
-    <button class="tool-btn red" id="clear-crop-btn" title="Undo crop (⌘Z)">
+    <button class="tool-btn" id="redo-btn" title="Redo (⌘⇧Z)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/>
+        <path d="M20.49 15a9 9 0 1 1-.49-3.51"/>
+      </svg>
+    </button>
+
+    <button class="tool-btn red" id="clear-crop-btn" title="Undo (⌘Z)">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
       </svg>
@@ -495,7 +508,7 @@
 
   <!-- ── Text input ── -->
   <div id="text-wrap">
-    <input id="text-input" type="text" placeholder="Type here…" autocomplete="off">
+    <textarea id="text-input" rows="1" placeholder="Type here…" autocomplete="off"></textarea>
   </div>
 
   <!-- ── Color popover ── -->
@@ -538,7 +551,7 @@
   <!-- ── Hint bar ── -->
   <div id="hint-bar">
     <span id="hint-text">Drag to select a region to save — or annotate the full page and click Share.</span>
-    <span style="float:right">⌘Z undo &nbsp;·&nbsp; Esc cancel</span>
+    <span style="float:right">⌘Z undo &nbsp;·&nbsp; ⌘⇧Z redo &nbsp;·&nbsp; Esc cancel</span>
   </div>
 
   <script src="editor.js"></script>
