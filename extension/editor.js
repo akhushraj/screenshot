@@ -102,10 +102,52 @@ const copyCopied = document.getElementById('copy-copied');
 // ─────────────────────────────────────────────
 //  Boot
 // ─────────────────────────────────────────────
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
 (async () => {
-  const params    = new URLSearchParams(location.search);
+  const params = new URLSearchParams(location.search);
+
+  // ── Clipboard mode ──────────────────────────────────────────────────────────
+  if (params.get('source') === 'clipboard') {
+    const overlay = document.getElementById('paste-overlay');
+    overlay.classList.add('visible');
+
+    document.addEventListener('paste', async function onPaste(e) {
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const imageItem = items.find(i => i.type.startsWith('image/'));
+      if (!imageItem) {
+        showError('No image in clipboard — copy an image first, then press ⌘V.');
+        return;
+      }
+      document.removeEventListener('paste', onPaste);
+      const blob = imageItem.getAsFile();
+      const url  = URL.createObjectURL(blob);
+      try {
+        const img = await loadImage(url);
+        URL.revokeObjectURL(url);
+        overlay.classList.remove('visible');
+        S.image = img;
+        setupCanvas();
+        setupEvents();
+        render();
+        pushHistory();
+      } catch {
+        showError('Failed to load pasted image.');
+      }
+    });
+    return;
+  }
+
+  // ── Normal capture mode ─────────────────────────────────────────────────────
   const captureId = params.get('id');
-  if (!captureId) { showError('No capture ID — open this from the SnapShare extension.'); return; }
+  if (!captureId) { showError('No capture ID — open this from the Captura extension.'); return; }
 
   const stored = await chrome.storage.local.get(`capture_${captureId}`);
   const base64 = stored[`capture_${captureId}`];
@@ -113,16 +155,16 @@ const copyCopied = document.getElementById('copy-copied');
 
   if (!base64) { showError('Screenshot data not found. Please try capturing again.'); return; }
 
-  const img = new Image();
-  img.onload = () => {
+  try {
+    const img = await loadImage(`data:image/png;base64,${base64}`);
     S.image = img;
     setupCanvas();
     setupEvents();
     render();
     pushHistory();
-  };
-  img.onerror = () => showError('Failed to decode screenshot.');
-  img.src = `data:image/png;base64,${base64}`;
+  } catch {
+    showError('Failed to decode screenshot.');
+  }
 })();
 
 // ─────────────────────────────────────────────

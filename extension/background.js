@@ -8,6 +8,11 @@ function registerContextMenu() {
       title: 'Capture full window (includes side panels)',
       contexts: ['action'],
     });
+    chrome.contextMenus.create({
+      id: 'open-clipboard-image',
+      title: 'Open clipboard image',
+      contexts: ['action'],
+    });
   });
 }
 
@@ -55,8 +60,17 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 });
 
-// ── Right-click: full window via desktopCapture ───────────────────────────────
-chrome.contextMenus.onClicked.addListener((info, tab) => {
+// ── Right-click context menu ──────────────────────────────────────────────────
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === 'open-clipboard-image') {
+    await chrome.tabs.create({
+      url: chrome.runtime.getURL('editor.html?source=clipboard'),
+      index: (tab?.index ?? 0) + 1,
+      active: true,
+    });
+    return;
+  }
+
   if (info.menuItemId !== 'capture-full-window') return;
 
   chrome.desktopCapture.chooseDesktopMedia(['window', 'screen'], tab, async (streamId) => {
